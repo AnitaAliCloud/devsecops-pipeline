@@ -59,12 +59,44 @@ pipeline {
         // SonarQube pointing to <jenkins-url>/sonarqube-webhook/)
         stage('Quality Gate') {
             steps {
-                echo "Waiting for SonarQube quality gate result..."
-                timeout(time: 10, unit: 'MINUTES') {
-                    waitForQualityGate abortPipeline: true
-                }
-            }
-        }
+                echo "Polling SonarCloud for analysis result..."
+                script {
+                    def taskFile = readFile('.scannerwork/report-task.txt')
+                    def ceTaskId = (taskFile =~ /ceTaskId=(.+)/)[0][1]
+
+                    withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
+                        timeout(time: 5, unit: 'MINUTES') {
+                            waitUntil {
+                                def response = sh(
+                                    script: "curl -s -u \${SONAR_TOKEN}: https://sonarcloud.io/api/ce/task?id=${ceTaskId}",
+                                    returnStdout: true
+                                ).trim()
+                               def status = (response =~ /"status":"(\w+)"/)[0][1]
+                               echo "SonarCloud task status: ${status}"
+                               return status == 'SUCCESS' || status == 'FAILED'
+                          }
+                      }
+
+                      def analysisResponse = sh(
+                          script: "curl -s -u \${SONAR_TOKEN}: https://sonarcloud.io/api/ce/task?id=${ceTaskId}",
+                          returnStdout: true
+                      ).trim()
+                      def analysisId = (analysisResponse =~ /"analysisId":"([^"]+)"/)[0][1]
+
+                      def gateResponse = sh(
+                          script: "curl -s -u \${SONAR_TOKEN}: https://sonarcloud.io/api/qualitygates/project_status?analysisId=${analysisId}",
+                          returnStdout: true
+                       ).trim()
+                       def gateStatus = (gateResponse =~ /"status":"(\w+)"/)[0][1]
+                       echo "Quality Gate status: ${gateStatus}"
+
+                       if (gateStatus != 'OK') {
+                           error "Quality Gate failed: ${gateStatus}"
+                       }
+                   }
+              }
+          }
+      }
  
         // ------------------------------------------------------
         // STAGE 3: Security Scan (Trivy)
