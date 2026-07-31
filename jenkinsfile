@@ -14,7 +14,7 @@ pipeline {
         // ---- EDIT THESE FOR YOUR PROJECT ----
         DOCKERHUB_CREDENTIALS = 'Dockerhub-credentials'      // Jenkins credentials ID
         DOCKERHUB_NAMESPACE   = 'anitaalicloud'         // your Docker Hub username/org
-        IMAGE_NAME            = 'my-app'                // name of the image
+        IMAGE_NAME            = 'devsecops-pipeline'                // name of the image
         IMAGE_TAG             = "${env.BUILD_NUMBER}"   // unique tag per build
         SONAR_PROJECT_KEY     = 'AnitaAliCloud_devsecops-pipeline'
         SCANNER_HOME          = tool 'SonarScanner'      // must match tool name in Jenkins config
