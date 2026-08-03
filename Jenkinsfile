@@ -1,48 +1,39 @@
 pipeline {
     agent any
- 
+
     options {
-        // Keep only the last 10 builds' worth of history/artifacts
         buildDiscarder(logRotator(numToKeepStr: '10'))
-        // Prevent a hung stage from blocking the pipeline forever
         timeout(time: 30, unit: 'MINUTES')
-        // Nicer timestamps in the console log
         timestamps()
     }
- 
+
     environment {
-        // ---- EDIT THESE FOR YOUR PROJECT ----
-        DOCKERHUB_CREDENTIALS = 'Dockerhub-credentials'      // Jenkins credentials ID
-        DOCKERHUB_NAMESPACE   = 'anitaalicloud'         // your Docker Hub username/org
-        IMAGE_NAME            = 'devsecops-pipeline'                // name of the image
-        IMAGE_TAG             = "${env.BUILD_NUMBER}"   // unique tag per build
+        DOCKERHUB_CREDENTIALS = 'dockerhub-creds'
+        DOCKERHUB_NAMESPACE   = 'anitaalicloud'
+        IMAGE_NAME            = 'devsecops-pipeline'
+        IMAGE_TAG             = "${env.BUILD_NUMBER}"
         SONAR_PROJECT_KEY     = 'AnitaAliCloud_devsecops-pipeline'
-        SCANNER_HOME          = tool 'SonarScanner'      // must match tool name in Jenkins config
+        SONAR_ORG             = 'anitaalicloud'
+        SCANNER_HOME          = tool 'SonarScanner'
     }
- 
+
     stages {
- 
-        // ------------------------------------------------------
-        // STAGE 1: Checkout
-        // ------------------------------------------------------
+
         stage('Checkout') {
             steps {
                 echo "Pulling source code from Git..."
                 checkout scm
             }
         }
- 
-        // ------------------------------------------------------
-        // STAGE 2: Code Quality (SonarQube)
-        // ------------------------------------------------------
+
         stage('Code Quality') {
             steps {
-                echo "Running SonarQube static analysis..."
+                echo "Running SonarCloud static analysis..."
                 withSonarQubeEnv('SonarQubeServer') {
                     sh """
                         ${SCANNER_HOME}/bin/sonar-scanner \
-                          -Dsonar.projectKey=AnitaAliCloud_devsecops-pipeline \
-                          -Dsonar.organization=anitaalicloud \
+                          -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
+                          -Dsonar.organization=${SONAR_ORG} \
                           -Dsonar.sources=. \
                           -Dsonar.host.url=${env.SONAR_HOST_URL} \
                           -Dsonar.login=${env.SONAR_AUTH_TOKEN}
@@ -50,13 +41,7 @@ pipeline {
                 }
             }
         }
- 
-        // This is a SEPARATE stage on purpose: the SonarQube server
-        // analyzes asynchronously and reports back via a webhook.
-        // waitForQualityGate() pauses the pipeline until that report
-        // arrives, then fails the build automatically if the gate
-        // status isn't "OK". (Requires a webhook configured in
-        // SonarQube pointing to <jenkins-url>/sonarqube-webhook/)
+
         stage('Quality Gate') {
             steps {
                 echo "Polling SonarCloud for analysis result..."
@@ -71,36 +56,33 @@ pipeline {
                                     script: "curl -s -u \${SONAR_TOKEN}: https://sonarcloud.io/api/ce/task?id=${ceTaskId}",
                                     returnStdout: true
                                 ).trim()
-                               def status = (response =~ /"status":"(\w+)"/)[0][1]
-                               echo "SonarCloud task status: ${status}"
-                               return status == 'SUCCESS' || status == 'FAILED'
-                          }
-                      }
+                                def status = (response =~ /"status":"(\w+)"/)[0][1]
+                                echo "SonarCloud task status: ${status}"
+                                return status == 'SUCCESS' || status == 'FAILED'
+                            }
+                        }
 
-                      def analysisResponse = sh(
-                          script: "curl -s -u \${SONAR_TOKEN}: https://sonarcloud.io/api/ce/task?id=${ceTaskId}",
-                          returnStdout: true
-                      ).trim()
-                      def analysisId = (analysisResponse =~ /"analysisId":"([^"]+)"/)[0][1]
+                        def analysisResponse = sh(
+                            script: "curl -s -u \${SONAR_TOKEN}: https://sonarcloud.io/api/ce/task?id=${ceTaskId}",
+                            returnStdout: true
+                        ).trim()
+                        def analysisId = (analysisResponse =~ /"analysisId":"([^"]+)"/)[0][1]
 
-                      def gateResponse = sh(
-                          script: "curl -s -u \${SONAR_TOKEN}: https://sonarcloud.io/api/qualitygates/project_status?analysisId=${analysisId}",
-                          returnStdout: true
-                       ).trim()
-                       def gateStatus = (gateResponse =~ /"status":"(\w+)"/)[0][1]
-                       echo "Quality Gate status: ${gateStatus}"
+                        def gateResponse = sh(
+                            script: "curl -s -u \${SONAR_TOKEN}: https://sonarcloud.io/api/qualitygates/project_status?analysisId=${analysisId}",
+                            returnStdout: true
+                        ).trim()
+                        def gateStatus = (gateResponse =~ /"status":"(\w+)"/)[0][1]
+                        echo "Quality Gate status: ${gateStatus}"
 
-                       if (gateStatus != 'OK') {
-                           error "Quality Gate failed: ${gateStatus}"
-                       }
-                   }
-              }
-          }
-      }
- 
-        // ------------------------------------------------------
-        // STAGE 3: Security Scan (Trivy)
-        // ------------------------------------------------------
+                        if (gateStatus != 'OK') {
+                            error "Quality Gate failed: ${gateStatus}"
+                        }
+                    }
+                }
+            }
+        }
+
         stage('Security Scan') {
             steps {
                 echo "Scanning filesystem and dependencies for vulnerabilities with Trivy..."
@@ -119,10 +101,7 @@ pipeline {
                 }
             }
         }
- 
-        // ------------------------------------------------------
-        // STAGE 4: Build & Push
-        // ------------------------------------------------------
+
         stage('Build Docker Image') {
             steps {
                 echo "Building Docker image..."
@@ -132,11 +111,8 @@ pipeline {
                 """
             }
         }
- 
+
         stage('Scan Docker Image') {
-            // Second Trivy pass, this time against the built IMAGE
-            // itself (catches vulnerable OS packages/base image
-            // layers that the filesystem scan wouldn't see).
             steps {
                 echo "Scanning the built image with Trivy before pushing..."
                 sh """
@@ -153,7 +129,7 @@ pipeline {
                 }
             }
         }
- 
+
         stage('Push to Docker Hub') {
             steps {
                 echo "Pushing image to Docker Hub..."
@@ -172,16 +148,15 @@ pipeline {
             }
         }
     }
- 
+
     post {
         success {
             echo "Pipeline completed successfully: ${DOCKERHUB_NAMESPACE}/${IMAGE_NAME}:${IMAGE_TAG} pushed to Docker Hub."
         }
         failure {
-            echo "Pipeline failed. Check the stage logs above (quality gate, security scan, or build/push) for details."
+            echo "Pipeline failed. Check the stage logs above for details."
         }
         always {
-            // Clean up local images so the Jenkins agent disk doesn't fill up
             sh """
                 docker rmi ${DOCKERHUB_NAMESPACE}/${IMAGE_NAME}:${IMAGE_TAG} || true
                 docker rmi ${DOCKERHUB_NAMESPACE}/${IMAGE_NAME}:latest || true
@@ -190,4 +165,3 @@ pipeline {
         }
     }
 }
- 
