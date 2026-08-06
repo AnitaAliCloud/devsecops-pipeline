@@ -8,7 +8,7 @@ pipeline {
     }
 
     environment {
-        DOCKERHUB_CREDENTIALS = 'dockerhub-credentials'
+        DOCKERHUB_CREDENTIALS = 'Dockerhub-credentials'
         DOCKERHUB_NAMESPACE   = 'anitaalicloud'
         IMAGE_NAME            = 'devsecops-pipeline'
         IMAGE_TAG             = "${env.BUILD_NUMBER}"
