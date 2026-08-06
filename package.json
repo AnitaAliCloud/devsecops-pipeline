@@ -4,9 +4,14 @@
   "description": "Minimal app for testing the DevSecOps Jenkins pipeline",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "test": "jest --coverage --coverageReporters=lcov --coverageReporters=text"
   },
   "dependencies": {
     "express": "^4.19.2"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "supertest": "^7.0.0"
   }
 }

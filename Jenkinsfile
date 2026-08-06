@@ -26,6 +26,14 @@ pipeline {
             }
         }
 
+        stage('Install & Test') {
+            steps {
+                echo "Installing dependencies and running tests..."
+                sh 'npm ci --ignore-scripts'
+                sh 'npm test'
+            }
+        }
+
         stage('Code Quality') {
             steps {
                 echo "Running SonarCloud static analysis..."
@@ -35,6 +43,7 @@ pipeline {
                           -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
                           -Dsonar.organization=${SONAR_ORG} \
                           -Dsonar.sources=. \
+                          -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info \
                           -Dsonar.host.url=${env.SONAR_HOST_URL} \
                           -Dsonar.login=${env.SONAR_AUTH_TOKEN}
                     """
