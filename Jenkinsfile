@@ -43,6 +43,7 @@ pipeline {
                           -Dsonar.projectKey=${SONAR_PROJECT_KEY} \
                           -Dsonar.organization=${SONAR_ORG} \
                           -Dsonar.sources=. \
+                          -Dsonar.exclusions=node_modules/**,coverage/** \
                           -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info \
                           -Dsonar.host.url=${env.SONAR_HOST_URL} \
                           -Dsonar.login=${env.SONAR_AUTH_TOKEN}
