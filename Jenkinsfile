@@ -8,7 +8,7 @@ pipeline {
     }
 
     environment {
-        DOCKERHUB_CREDENTIALS = 'Dockerhub-credentials'
+        DOCKERHUB_CREDENTIALS = 'dockerhub-creds'
         DOCKERHUB_NAMESPACE   = 'anitaalicloud'
         IMAGE_NAME            = 'devsecops-pipeline'
         IMAGE_TAG             = "${env.BUILD_NUMBER}"
@@ -44,6 +44,8 @@ pipeline {
                           -Dsonar.organization=${SONAR_ORG} \
                           -Dsonar.sources=. \
                           -Dsonar.exclusions=node_modules/**,coverage/** \
+                          -Dsonar.tests=. \
+                          -Dsonar.test.inclusions=**/*.test.js \
                           -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info \
                           -Dsonar.host.url=${env.SONAR_HOST_URL} \
                           -Dsonar.login=${env.SONAR_AUTH_TOKEN}
@@ -157,11 +159,25 @@ pipeline {
                 }
             }
         }
+
+        stage('Deploy') {
+            steps {
+                echo "Deploying the new container..."
+                sh """
+                    docker rm -f devsecops-pipeline-app || true
+                    docker run -d \
+                      --name devsecops-pipeline-app \
+                      --restart unless-stopped \
+                      -p 3000:3000 \
+                      ${DOCKERHUB_NAMESPACE}/${IMAGE_NAME}:${IMAGE_TAG}
+                """
+            }
+        }
     }
 
     post {
         success {
-            echo "Pipeline completed successfully: ${DOCKERHUB_NAMESPACE}/${IMAGE_NAME}:${IMAGE_TAG} pushed to Docker Hub."
+            echo "Pipeline completed successfully: ${DOCKERHUB_NAMESPACE}/${IMAGE_NAME}:${IMAGE_TAG} deployed."
         }
         failure {
             echo "Pipeline failed. Check the stage logs above for details."
@@ -169,7 +185,6 @@ pipeline {
         always {
             sh """
                 docker rmi ${DOCKERHUB_NAMESPACE}/${IMAGE_NAME}:${IMAGE_TAG} || true
-                docker rmi ${DOCKERHUB_NAMESPACE}/${IMAGE_NAME}:latest || true
             """
             cleanWs()
         }
